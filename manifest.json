@@ -1,0 +1,12 @@
+{
+  "kind": "marinara.personal-extension",
+  "version": 1,
+  "config": {
+    "name": "기억 서재 자동 주입",
+    "version": "1.0.1",
+    "description": "켜면 기억 서재에서 '이 방에서 기억 사용'이 켜진 롤플레이 방마다 기존 채팅 요약을 끄고 {{기억}} 요약 항목을 넣어, 프리셋을 고치지 않고 기억이 들어가게 합니다. 끄면 이 확장이 끈 요약만 다시 켜고 추가한 항목을 지웁니다. 기억 서재(서버 모듈)가 필요합니다.",
+    "runtime": "client",
+    "capabilities": ["full_page_access"],
+    "jsPath": "extension.js"
+  }
+}
