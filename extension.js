@@ -1,4 +1,4 @@
-/* 기억 서재 자동 주입 v2.1.1
+/* 기억 서재 자동 주입 v2.2.0
  *
  * 1) 프리셋: 모든 프리셋(마리나라 기본 제공 제외)에 {{기억}} 한 줄짜리 'Memory' 섹션을 자동으로 넣는다.
  *    위치 규칙(꺼진 섹션·꺼진 그룹은 없는 것으로 친다)
@@ -7,8 +7,8 @@
  *      ③ 첫 섹션부터 system 이 아니면 맨 위
  *    한 번 넣은 뒤에는 사용자가 옮겨도 다시 끌어오지 않는다. 다른 섹션에 {{기억}}이 이미 있으면 넣지 않는다.
  *    기억 서재가 꺼진 방에서는 {{기억}}이 빈 값이라 섹션 자체가 빠진다.
- * 2) 방(선택, 기본 켬): 기억 서재가 켜진 롤플레이 방의 마리나라 채팅 요약을 꺼서 중복을 막는다.
- *    무엇을 껐는지는 방 메타데이터(memoryLibraryInject)에 적어 두고, 기억을 끄거나 옵션·확장을 끄면 되살린다.
+ * 2) 방: 기억 서재가 켜진 롤플레이 방의 마리나라 채팅 요약을 꺼서 중복을 막는다.
+ *    무엇을 껐는지는 방 메타데이터(memoryLibraryInject)에 적어 두고, 기억을 끄거나 확장을 끄면 되살린다.
  * 확장을 끄면 넣은 섹션을 지우고 끈 요약을 되살린다.
  *
  * 주기적으로 서버를 훑지 않는다. 시작할 때 한 번 전체를 맞춘 뒤에는
@@ -27,10 +27,7 @@ let stopped = false;
 let chain = Promise.resolve();
 const managed = new Set();  // 요약을 꺼 둔 방
 const skipped = new Set();  // 이번 실행 동안 건너뛸 방
-let disableSummaries = true;
-let lastPresetResult = "";
 const knownPresetIds = new Set();
-const stockPresetIds = new Set();
 
 /* ---------- 서버 ---------- */
 
@@ -116,12 +113,10 @@ async function syncPreset(presetId) {
     }
     return "added";
   } catch (error) {
-    if (error?.status === 409) { stockPresetIds.add(presetId); return "stock"; } // 기본 제공 프리셋은 수정 불가
+    if (error?.status === 409) return "stock"; // 기본 제공 프리셋은 수정 불가
     throw error;
   }
 }
-
-const LABEL = { added: "추가", kept: "들어 있음", fixed: "고침", own: "직접 넣은 {{기억}} 사용", stock: "기본 제공(건너뜀)", removed: "제거", none: "변경 없음", error: "실패" };
 
 async function syncPresets(onlyNew = false) {
   const list = (await api("GET", "/api/prompts")) || [];
@@ -135,9 +130,6 @@ async function syncPresets(onlyNew = false) {
     const r = await syncPreset(preset.id).catch((e) => (log.warn(`프리셋 처리 실패: ${preset.name || preset.id}`, e), "error"));
     count[r] = (count[r] || 0) + 1;
   }
-  const text = Object.entries(count).map(([k, n]) => `${LABEL[k] || k} ${n}`).join(" · ") || "프리셋 없음";
-  lastPresetResult = onlyNew ? `새 프리셋 ${text}` : text;
-  renderPanel();
   return count;
 }
 
@@ -207,102 +199,24 @@ async function syncRooms() {
   if (stopped) return;
   const enabled = await enabledRooms();
   if (!enabled || stopped) return;
-  if (disableSummaries) {
-    for (const id of enabled) {
-      if (stopped) return;
-      if (!managed.has(id) && !skipped.has(id)) await apply(id).catch((e) => log.warn(`요약 끄기 실패: ${id}`, e));
-    }
+  for (const id of enabled) {
+    if (stopped) return;
+    if (!managed.has(id) && !skipped.has(id)) await apply(id).catch((e) => log.warn(`요약 끄기 실패: ${id}`, e));
   }
   for (const id of [...managed]) {
     if (stopped) return;
-    if (!disableSummaries || !enabled.has(id)) await restore(id).catch((e) => log.warn(`되살리기 실패: ${id}`, e));
+    if (!enabled.has(id)) await restore(id).catch((e) => log.warn(`되살리기 실패: ${id}`, e));
   }
 }
 
 const queue = (task) => (chain = chain.then(task).catch((e) => log.warn(e)));
 
-/* ---------- 설정 화면 ---------- */
-
-const ui = (() => {
-  const style = document.createElement("style");
-  style.textContent = `
-.mlai-launch{position:fixed;right:16px;bottom:128px;z-index:60;width:36px;height:36px;border-radius:50%;
-  border:1px solid var(--border,#8884);background:var(--card,#fff);color:var(--foreground,#222);display:grid;place-items:center;cursor:pointer;padding:0}
-.mlai-launch svg{width:18px;height:18px}
-.mlai-panel{position:fixed;right:16px;bottom:172px;z-index:61;width:min(340px,calc(100vw - 32px));max-height:calc(100vh - 200px);overflow:auto;
-  background:var(--card,#fff);color:var(--foreground,#222);border:1px solid var(--border,#8884);border-radius:12px;padding:14px 16px;
-  font-size:13px;line-height:1.55;box-shadow:0 8px 24px #0003}
-.mlai-panel[hidden]{display:none}
-.mlai-panel h3{margin:0 0 8px;font-size:14px}
-.mlai-panel p{margin:6px 0;color:var(--muted-foreground,#666)}
-.mlai-panel b{color:var(--foreground,#222)}
-.mlai-panel label{display:flex;gap:8px;align-items:flex-start;margin:8px 0;color:var(--foreground,#222)}
-.mlai-row{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
-.mlai-row button{padding:5px 12px;border-radius:8px;border:1px solid var(--border,#8884);background:transparent;color:inherit;cursor:pointer}
-.mlai-status{margin-top:8px;font-size:12px;color:var(--muted-foreground,#666)}`;
-  document.head.appendChild(style);
-
-  const launcher = document.createElement("button");
-  launcher.type = "button";
-  launcher.className = "mlai-launch";
-  launcher.title = "기억 자동 주입";
-  launcher.setAttribute("aria-label", "기억 자동 주입");
-  launcher.setAttribute("data-drawer-launcher", "");
-  launcher.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 11h16M4 16h9"/><path d="M17 14v6M14.5 17.5 17 20l2.5-2.5"/></svg>';
-  document.body.appendChild(launcher);
-
-  const panel = document.createElement("div");
-  panel.className = "mlai-panel";
-  panel.hidden = true;
-  panel.setAttribute("role", "dialog");
-  panel.innerHTML = `
-<h3>기억 자동 주입</h3>
-<p class="mlai-room"></p>
-<p>모든 프리셋에 <b>📚 Memory</b> 섹션(<b>{{기억}}</b>)을 자동으로 넣습니다.</p>
-<p>① Chat Summary·Chat History 마커 바로 위 (기억 서재 추천 위치)<br>② 마커가 없으면 앞쪽 시스템 프롬프트 끝<br>③ 그것도 없으면 맨 위</p>
-<p>넣은 뒤 직접 옮긴 위치는 그대로 둡니다. 기억 서재가 꺼진 방에서는 비어서 빠집니다. 새로 만들거나 가져온 프리셋에는 그때 바로 넣습니다. 마리나라 기본 제공 프리셋은 수정할 수 없어 건너뜁니다.</p>
-<label><input type="checkbox" class="mlai-sum"> <span>기억 서재가 켜진 방은 마리나라 채팅 요약 끄기<br><span style="color:var(--muted-foreground,#666)">같은 지난 이야기가 두 번 들어가는 것을 막습니다. 끄면 꺼 둔 요약을 다시 켭니다.</span></span></label>
-<div class="mlai-row"><button type="button" class="mlai-recheck">프리셋 다시 확인</button><button type="button" class="mlai-close">닫기</button></div>
-<div class="mlai-status"></div>`;
-  document.body.appendChild(panel);
-  return { style, launcher, panel };
-})();
-
-const $ = (sel) => ui.panel.querySelector(sel);
 let lastChat = (() => { try { return localStorage.getItem("marinara-active-chat-id") || ""; } catch { return ""; } })();
-
-async function renderPanel() {
-  if (ui.panel.hidden) return;
-  $(".mlai-sum").checked = disableSummaries;
-  $(".mlai-status").textContent = lastPresetResult ? `프리셋: ${lastPresetResult}` : "";
-  const id = lastChat;
-  if (!id) { $(".mlai-room").textContent = "현재 방: 선택된 방 없음"; return; }
-  let text = managed.has(id) ? "기억 사용 중 · 마리나라 요약 꺼 둠" : skipped.has(id) ? "롤플레이 방이 아니라 건너뜀" : "기억 서재 켜짐 여부 확인 전이거나 꺼짐";
-  try {
-    const chat = await api("GET", chatUrl(id));
-    if (chat?.promptPresetId && stockPresetIds.has(chat.promptPresetId)) text += " · ⚠ 기본 제공 프리셋이라 기억이 들어가지 않아요";
-  } catch {}
-  $(".mlai-room").textContent = `현재 방: ${text}`;
-}
-
-ui.launcher.addEventListener("click", () => { ui.panel.hidden = !ui.panel.hidden; renderPanel(); });
-$(".mlai-close").addEventListener("click", () => { ui.panel.hidden = true; });
-$(".mlai-recheck").addEventListener("click", () => { $(".mlai-status").textContent = "확인하는 중…"; queue(() => syncPresets()); });
-$(".mlai-sum").addEventListener("change", (e) => {
-  const on = e.target.checked;
-  queue(async () => {
-    disableSummaries = on;
-    await marinara.storage.patch({ disableSummaries: on });
-    await syncRooms();
-    renderPanel();
-  });
-});
 
 /* ---------- 시작 ---------- */
 
 queue(async () => {
   const saved = await marinara.storage.get().catch(() => ({}));
-  if (typeof saved.disableSummaries === "boolean") disableSummaries = saved.disableSummaries;
   for (const id of Array.isArray(saved.rooms) ? saved.rooms : []) {
     // 지난번 끌 때 이미 되살린 방은 기록만 남아 있을 수 있으니 실제 방 상태로 확인
     try {
@@ -343,7 +257,6 @@ marinara.setInterval(() => {
   lastChat = now;
   skipped.delete(now);
   queue(syncRooms);
-  renderPanel();
 }, CHAT_KEY_POLL_MS);
 const onVisible = () => { if (document.visibilityState === "visible") queue(syncRooms); };
 document.addEventListener("visibilitychange", onVisible);
@@ -354,7 +267,6 @@ marinara.onCleanup(async () => {
   document.removeEventListener("visibilitychange", onVisible);
   hookOn = false;
   if (window.fetch === hookedFetch) window.fetch = originalFetch; // 다른 확장이 그 위에 덧씌웠으면 그대로 두고 통과만 한다
-  ui.launcher.remove(); ui.panel.remove(); ui.style.remove();
   await chain.catch(() => {});
   // 새로고침·업데이트로 다시 시작되는 경우엔 되돌리지 않는다. 정말 꺼졌을 때만 되돌린다.
   try {

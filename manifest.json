@@ -3,8 +3,8 @@
   "version": 1,
   "config": {
     "name": "기억 서재 자동 주입",
-    "version": "2.1.1",
-    "description": "모든 프리셋에 {{기억}} 'Memory' 섹션을 기억 서재 추천 위치(Chat Summary·Chat History 마커 바로 위)에 자동으로 넣고, 기억 서재가 켜진 방의 마리나라 채팅 요약은 꺼서 중복을 막습니다. 끄면 넣은 섹션을 지우고 요약을 되살립니다. 기억 서재(서버 모듈)가 필요합니다.",
+    "version": "2.2.0",
+    "description": "프리셋에 {{기억}} 섹션을 자동으로 넣습니다.",
     "runtime": "client",
     "capabilities": ["full_page_access"],
     "jsPath": "extension.js"
